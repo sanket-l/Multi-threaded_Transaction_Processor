@@ -1,0 +1,17 @@
+WORKLOAD
+
+TRANSACTION (INPUTS: FROM_KEY, TO_KEY)
+
+from_acc = READ(FROM_KEY)
+to_acc   = READ(TO_KEY)
+
+from_acc["balance"] = from_acc["balance"] - 1
+to_acc["balance"]   = to_acc["balance"] + 1
+
+WRITE(FROM_KEY, from_acc)
+WRITE(TO_KEY, to_acc)
+
+COMMIT
+
+
+END

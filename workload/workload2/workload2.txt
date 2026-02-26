@@ -1,0 +1,53 @@
+WORKLOAD
+
+
+TRANSACTION (INPUTS: D_KEY, S_KEY_1, S_KEY_2, S_KEY_3)
+
+d = READ(D_KEY)
+o_id = d["next_o_id"]
+d["next_o_id"] = o_id + 1
+WRITE(D_KEY, d)
+
+s1 = READ(S_KEY_1)
+s1["qty"] = s1["qty"] - 1
+s1["ytd"] = s1["ytd"] + 1
+s1["order_cnt"] = s1["order_cnt"] + 1
+WRITE(S_KEY_1, s1)
+
+s2 = READ(S_KEY_2)
+s2["qty"] = s2["qty"] - 1
+s2["ytd"] = s2["ytd"] + 1
+s2["order_cnt"] = s2["order_cnt"] + 1
+WRITE(S_KEY_2, s2)
+
+s3 = READ(S_KEY_3)
+s3["qty"] = s3["qty"] - 1
+s3["ytd"] = s3["ytd"] + 1
+s3["order_cnt"] = s3["order_cnt"] + 1
+WRITE(S_KEY_3, s3)
+
+COMMIT
+
+
+
+
+TRANSACTION (INPUTS: W_KEY, D_KEY, C_KEY)
+
+w = READ(W_KEY)
+w["ytd"] = w["ytd"] + 5
+WRITE(W_KEY, w)
+
+d = READ(D_KEY)
+d["ytd"] = d["ytd"] + 5
+WRITE(D_KEY, d)
+
+c = READ(C_KEY)
+c["balance"] = c["balance"] - 5
+c["ytd_payment"] = c["ytd_payment"] + 5
+c["payment_cnt"] = c["payment_cnt"] + 1
+WRITE(C_KEY, c)
+
+COMMIT
+
+
+END

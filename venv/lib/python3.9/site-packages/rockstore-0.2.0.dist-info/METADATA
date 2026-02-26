@@ -1,0 +1,391 @@
+Metadata-Version: 2.4
+Name: rockstore
+Version: 0.2.0
+Summary: A lightweight Python wrapper for RocksDB using CFFI
+Author-email: Prasad Kumkar <prasad@chainscore.finance>, Chainscore Labs <hello@chainscore.finance>
+License: MIT
+Project-URL: Homepage, https://github.com/chainscore/rockstore
+Project-URL: Documentation, https://github.com/chainscore/rockstore#readme
+Project-URL: Repository, https://github.com/chainscore/rockstore
+Project-URL: Bug Tracker, https://github.com/chainscore/rockstore/issues
+Keywords: rocksdb,database,key-value,cffi,embedded,persistent,storage,nosql,fast,performance,batch-write,python-wrapper
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Database
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: cffi>=1.15.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0.0; extra == "dev"
+Requires-Dist: pytest-benchmark>=4.0.0; extra == "dev"
+Requires-Dist: pytest-cov>=4.0.0; extra == "dev"
+Dynamic: license-file
+
+# RockStore
+
+[![PyPI version](https://badge.fury.io/py/rockstore.svg)](https://badge.fury.io/py/rockstore)
+[![Python Versions](https://img.shields.io/pypi/pyversions/rockstore.svg)](https://pypi.org/project/rockstore/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![Tests](https://github.com/chainscore/rockstore/actions/workflows/test.yml/badge.svg)](https://github.com/chainscore/rockstore/actions/workflows/test.yml)
+
+A lightweight Python wrapper for RocksDB using CFFI.
+
+## Overview
+
+RockStore provides a simple, Pythonic interface to RocksDB, Facebook's persistent key-value store. It uses CFFI for efficient native library bindings and focuses on clean binary data operations.
+
+## Features
+
+- **Simple API**: Easy-to-use Python interface for RocksDB operations
+- **Binary Operations**: Direct work with bytes for maximum performance
+- **Context Manager**: Automatic resource management with `with` statements
+- **Configurable Options**: Customize compression, buffer sizes, and more
+- **Read-Only Mode**: Open databases in read-only mode for safe concurrent access
+- **Cross-Platform**: Works on macOS, Linux, and Windows
+
+## Installation
+
+### Prerequisites
+
+First, install RocksDB on your system:
+
+**macOS (using Homebrew):**
+```bash
+brew install rocksdb
+```
+
+**Ubuntu/Debian:**
+```bash
+sudo apt-get install librocksdb-dev
+```
+
+**CentOS/RHEL/Fedora:**
+```bash
+sudo yum install rocksdb-devel
+# or for newer versions:
+sudo dnf install rocksdb-devel
+```
+
+**Windows:**
+- Download pre-built RocksDB binaries or build from source
+- Ensure `rocksdb.dll` is in your PATH
+
+### Install RockStore
+
+```bash
+pip install rockstore
+```
+
+## Quick Start
+
+### Basic Usage
+
+```python
+from rockstore import RockStore
+
+# Open a database
+db = RockStore('/path/to/database')
+
+# Store and retrieve binary data
+db.put(b'key1', b'value1')
+value = db.get(b'key1')
+print(value)  # b'value1'
+
+# Store and retrieve string data (encode/decode manually)
+db.put('name'.encode(), 'Alice'.encode())
+name = db.get('name'.encode()).decode()
+print(name)  # 'Alice'
+
+# Delete data
+db.delete(b'key1')
+
+# Clean up
+db.close()
+```
+
+### Using Context Manager (Recommended)
+
+```python
+from rockstore import open_database
+
+with open_database('/path/to/database') as db:
+    db.put(b'hello', b'world')
+    value = db.get(b'hello')
+    print(value)  # b'world'
+# Database is automatically closed
+```
+
+### Getting All Data
+
+```python
+with open_database('/path/to/database') as db:
+    db.put(b'key1', b'value1')
+    db.put(b'key2', b'value2')
+    
+    # Get all key-value pairs (warning: loads everything into memory)
+    all_data = db.get_all()
+    for key, value in all_data.items():
+        print(f"{key} -> {value}")
+```
+
+### Batch Operations
+
+For maximum performance when writing multiple records, use `write_batch`. It is significantly faster (4x+) than individual `put` operations and guarantees atomicity (all or nothing).
+
+```python
+with open_database('/path/to/database') as db:
+    # Prepare batch data (list of tuples)
+    batch_data = [
+        (b'key1', b'value1'),
+        (b'key2', b'value2'),
+        (b'key3', b'value3')
+    ]
+    
+    # Atomic write
+    db.write_batch(batch_data)
+    
+    # Atomic delete
+    keys_to_delete = [b'key1', b'key2']
+    db.delete_batch(keys_to_delete)
+```
+
+### Range Queries and Pagination
+
+For large databases, use range queries with pagination instead of `get_all()`:
+
+```python
+with open_database('/path/to/database') as db:
+    # Add sample data
+    for i in range(10000):
+        key = f"user:{i:06d}".encode()
+        value = f"User {i}".encode()
+        db.put(key, value)
+    
+    # Paginated access - get 1000 records at a time
+    batch_size = 1000
+    start_key = None
+    
+    while True:
+        # Get next batch
+        batch = db.get_range(start_key=start_key, limit=batch_size)
+        if not batch:
+            break
+            
+        print(f"Processing {len(batch)} records...")
+        
+        # Process the batch
+        for key, value in batch.items():
+            process_record(key, value)
+        
+        # Setup for next batch
+        last_key = max(batch.keys())
+        start_key = last_key + b'\x00'  # Next key after last_key
+    
+    # Query specific ranges
+    user_data = db.get_range(
+        start_key=b'user:', 
+        end_key=b'user:\xFF', 
+        limit=500
+    )
+    
+    # Memory-efficient iteration (one record at a time)
+    for key, value in db.iterate_range(start_key=b'user:', end_key=b'user:\xFF'):
+        process_user(key, value)
+```
+
+### Handling 10M+ Record Databases
+
+For very large databases (10M+ records), here's how to efficiently paginate in 100K batches:
+
+```python
+def process_large_database_in_batches(db_path, batch_size=100_000):
+    """
+    Process a large database (10M+ records) in manageable batches.
+    This approach uses constant memory regardless of database size.
+    """
+    with open_database(db_path) as db:
+        start_key = None
+        total_processed = 0
+        batch_count = 0
+        
+        while True:
+            # Get next batch
+            batch = db.get_range(start_key=start_key, limit=batch_size)
+            if not batch:
+                break
+            
+            batch_count += 1
+            total_processed += len(batch)
+            
+            print(f"Processing batch {batch_count}: {len(batch)} records")
+            print(f"Total processed so far: {total_processed}")
+            
+            # Process each record in the batch
+            for key, value in batch.items():
+                # Your processing logic here
+                process_record(key, value)
+            
+            # Prepare for next batch
+            last_key = max(batch.keys())
+            start_key = last_key + b'\x00'
+            
+            # Optional: Add progress tracking or break conditions
+            if total_processed >= 10_000_000:  # Safety limit
+                break
+        
+        print(f"Completed! Processed {total_processed} records in {batch_count} batches")
+
+# Even more memory-efficient approach using iterator
+def stream_process_large_database(db_path):
+    """
+    Stream process records one at a time - ultimate memory efficiency.
+    """
+    with open_database(db_path) as db:
+        processed = 0
+        for key, value in db.iterate_range():
+            process_record(key, value)
+            processed += 1
+            
+            if processed % 100_000 == 0:
+                print(f"Processed {processed} records...")
+```
+
+### Working with Strings
+
+```python
+# Helper functions for string encoding/decoding
+def encode_string(s):
+    return s.encode('utf-8')
+
+def decode_bytes(b):
+    return b.decode('utf-8')
+
+with open_database('/path/to/database') as db:
+    # Store string data
+    db.put(encode_string('user:123'), encode_string('John Doe'))
+    
+    # Retrieve and decode
+    user_data = db.get(encode_string('user:123'))
+    if user_data:
+        print(decode_bytes(user_data))  # 'John Doe'
+```
+
+## Configuration Options
+
+```python
+from rockstore import RockStore
+
+# Create database with custom options
+options = {
+    'create_if_missing': True,
+    'compression_type': 'lz4_compression',
+    'write_buffer_size': 64 * 1024 * 1024,  # 64MB
+    'max_open_files': 1000
+}
+
+db = RockStore('/path/to/database', options=options)
+```
+
+### Available Options
+
+- `create_if_missing` (bool): Create database if it doesn't exist (default: True)
+- `read_only` (bool): Open database in read-only mode (default: False)
+- `compression_type` (str): Compression algorithm - 'no_compression', 'snappy_compression', 'zlib_compression', 'bz2_compression', 'lz4_compression', 'lz4hc_compression', 'xpress_compression', 'zstd_compression' (default: 'snappy_compression')
+- `write_buffer_size` (int): Write buffer size in bytes (default: 64MB)
+- `max_open_files` (int): Maximum number of open files (default: 1000)
+
+### Per-Operation Options
+
+```python
+# Synchronous write (forces immediate disk write)
+db.put(b'key', b'value', sync=True)
+
+# Read without caching
+value = db.get(b'key', fill_cache=False)
+
+# Synchronous delete
+db.delete(b'key', sync=True)
+```
+
+## API Reference
+
+### RockStore Class
+
+#### Constructor
+```python
+RockStore(path, options=None)
+```
+
+#### Methods
+
+**Binary Operations:**
+- `put(key: bytes, value: bytes, sync: bool = False)` - Store binary data
+- `get(key: bytes, fill_cache: bool = True) -> bytes | None` - Retrieve binary data
+- `delete(key: bytes, sync: bool = False)` - Delete binary data
+
+**Batch Operations:**
+- `write_batch(operations: list[tuple[bytes, bytes]], sync: bool = False)` - Atomically write multiple key-value pairs
+- `delete_batch(keys: list[bytes], sync: bool = False)` - Atomically delete multiple keys
+
+**Bulk Read Operations:**
+- `get_all(fill_cache: bool = True) -> dict[bytes, bytes]` - Get all key-value pairs (loads into memory)
+- `get_range(start_key: bytes = None, end_key: bytes = None, limit: int = None, fill_cache: bool = True) -> dict[bytes, bytes]` - Get range of key-value pairs with pagination support
+- `iterate_range(start_key: bytes = None, end_key: bytes = None, fill_cache: bool = True) -> Iterator[tuple[bytes, bytes]]` - Memory-efficient iterator over key-value pairs
+
+**Resource Management:**
+- `close()` - Close the database
+- Context manager support (`with` statement)
+
+### Context Manager
+
+```python
+open_database(path, options=None) -> RockStore
+```
+
+## Requirements
+
+- Python 3.8+
+- CFFI >= 1.15.0
+- RocksDB library installed on system
+
+## Development
+
+### Running Tests
+
+```bash
+# Install development dependencies
+pip install -e ".[dev]"
+
+# Run tests
+pytest
+
+# Run with coverage
+pytest --cov=rockstore
+```
+
+## License
+
+MIT License - see LICENSE file for details.
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+---
+
+<p align="center">
+  <strong>Developed by Chainscore Labs</strong><br>
+  <a href="https://chainscore.finance">
+    <img src="https://www.chainscorelabs.com/en/opengraph-image" alt="Chainscore Labs" width="100%">
+  </a>
+</p> 
